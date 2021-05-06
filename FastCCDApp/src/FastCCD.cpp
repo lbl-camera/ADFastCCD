@@ -1790,6 +1790,13 @@ void FastCCD::statusTask(void)
         "%s:%s: Got status event\n",
         driverName, functionName);
     }
+    // Failed to connect, keep trying
+    else {
+	ERROR_PRINT("%s", "(ERROR_PRINT) Failed to connect to camera, retrying...\n");
+	ERROR_COMMENT("COMMENT_PRINT Failed to connect to camera, retrying...\n");
+        //this->connectCamera();  // TEMP, UNCOMMENT
+	//asynPrint(pasynUserSelf, ASYN_TRACE_ERROR, "Failed to connect to camera, retrying...\n");
+    }
 
     // Update the ticktock
     
