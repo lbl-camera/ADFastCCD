@@ -145,6 +145,13 @@ void FastCCD::allocateImage(cin_data_frame_t *frame)
       
   frame->data = (uint16_t*)pImage->pData;
 
+  while(!(pAccumulatingImage = this->pNDArrayPool->alloc(nDims, dims, (NDDataType_t)dataType, 
+                                                         0, NULL))) {
+    asynPrint(pasynUserSelf, ASYN_TRACE_ERROR,
+              "Unable to allocate array from pool....\n");
+    sleep(1);
+  }
+
   return;
 }
 
@@ -230,19 +237,53 @@ void FastCCD::processImage(cin_data_frame_t *frame)
 
   // Get any attributes for the driver
   this->getAttributes(pImage->pAttributeList);
-       
-  int arrayCallbacks;
-  getIntegerParam(NDArrayCallbacks, &arrayCallbacks);
-  if (arrayCallbacks) {
-    /* Call the NDArray callback */
-    /* Must release the lock here, or we can get into a deadlock, because we can
-     * block on the plugin lock, and the plugin can be calling us */
-    this->unlock();
-    doCallbacksGenericPointer(pImage, NDArrayData, 0);
-    this->lock();
+
+  // Handle accumulations
+  int numExposures;
+  getIntegerParam(ADNumExposures, &numExposures);
+  // Update exposures counter
+  int numExposuresCounter;
+  getIntegerParam(ADNumExposuresCounter, &numExposuresCounter);
+  numExposuresCounter++;
+  setIntegerParam(ADNumExposuresCounter, numExposuresCounter);
+
+  // Accumulate exposures into image accumulation buffer
+  int x_size = (int)pImage->dims[0].size;
+  int y_size = (int)pImage->dims[1].size;
+  uint16_t* originalData = (uint16_t*)pImage->pData;
+  uint16_t* targetData = (uint16_t*)pAccumulatingImage->pData;
+  for (int y = 0; y < y_size; y++) {
+    for (int x = 0; x < x_size; x++) {
+      if (numExposuresCounter == 1) {
+        targetData[x + y * y_size] = originalData[x + y * y_size];
+      }
+      else {
+        targetData[x + y * y_size] = originalData[x + y * y_size] + targetData[x + y * y_size];
+      }
+      // targetData[x + y * y_size] = 
+      //   (numExposuresCounter == 1) 
+      //     ? originalData[x + y * y_size] 
+      //     : originalData[x + y * y_size] + targetData[x + y * y_size];
+    }
+  }
+         
+  if (numExposures == numExposuresCounter) {
+    int arrayCallbacks;
+    getIntegerParam(NDArrayCallbacks, &arrayCallbacks);
+    if (arrayCallbacks) {
+      /* Call the NDArray callback */
+      /* Must release the lock here, or we can get into a deadlock, because we can
+      * block on the plugin lock, and the plugin can be calling us */
+      this->unlock();
+      doCallbacksGenericPointer(pAccumulatingImage, NDArrayData, 0);
+      this->lock();
+    }
+    // Release the accumulating image and reset the num exposures counter
+    pAccumulatingImage->release();
+    setIntegerParam(ADNumExposuresCounter, 0);
+
   }
 
- 
   asynPrint(this->pasynUserSelf, ASYN_TRACEIO_DRIVER,
               "%s:%s: frameId=%d\n",
               driverName, functionName, frame->number);
@@ -929,7 +970,7 @@ asynStatus FastCCD::writeInt32(asynUser *pasynUser, epicsInt32 value)
       if(value){ // User clicked 'Start' button
 
          // Send the hardware a start trigger command
-         int n_images, t_mode, i_mode;
+         int n_images, t_mode, i_mode, num_exposures;
          double t_exp, t_period;
          int _framestore;
 
@@ -937,6 +978,8 @@ asynStatus FastCCD::writeInt32(asynUser *pasynUser, epicsInt32 value)
          getIntegerParam(ADTriggerMode, &t_mode);
          getIntegerParam(ADImageMode, &i_mode);
          getIntegerParam(ADNumImages, &n_images);
+         // adjust frames remaining count based on # exposures
+         getIntegerParam(ADNumExposures, &num_exposures); 
          getDoubleParam(ADAcquireTime, &t_exp);
          getDoubleParam(ADAcquirePeriod, &t_period);
 
@@ -946,12 +989,12 @@ asynStatus FastCCD::writeInt32(asynUser *pasynUser, epicsInt32 value)
 
          switch(i_mode) {
            case ADImageSingle:
-             this->framesRemaining = 1;
+             this->framesRemaining = 1 * num_exposures;
              this->freeRun = 0;
              n_images = 1 + _framestore;
              break;
            case ADImageMultiple:
-             this->framesRemaining = n_images;
+             this->framesRemaining = n_images * num_exposures;
              this->freeRun = 0;
              if(_framestore){
                n_images += _framestore;

@@ -390,6 +390,7 @@ class FastCCD : public ADDriver {
 
 protected:
   NDArray *pImage;
+  NDArray *pAccumulatingImage;
   cin_ctl_t cin_ctl;
   cin_data_t cin_data;
 };
