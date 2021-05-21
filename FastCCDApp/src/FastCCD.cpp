@@ -4,8 +4,6 @@
  *
  */
 
-#include <iostream> // REMOVE
-
 #include <stdio.h>
 #include <string.h>
 #include <string>
@@ -147,11 +145,13 @@ void FastCCD::allocateImage(cin_data_frame_t *frame)
       
   frame->data = (uint16_t*)pImage->pData;
 
-  while(!(pAccumulatingImage = this->pNDArrayPool->alloc(nDims, dims, (NDDataType_t)dataType, 
-                                                         0, NULL))) {
-    asynPrint(pasynUserSelf, ASYN_TRACE_ERROR,
-              "Unable to allocate array from pool....\n");
-    sleep(1);
+  if (pAccumulatingImage == NULL) {
+    while(!(pAccumulatingImage = this->pNDArrayPool->alloc(nDims, dims, (NDDataType_t)dataType, 
+                                                           0, NULL))) {
+      asynPrint(pasynUserSelf, ASYN_TRACE_ERROR,
+                "Unable to allocate array from pool....\n");
+      sleep(1);
+    }
   }
 
   return;
@@ -280,7 +280,19 @@ void FastCCD::processImage(cin_data_frame_t *frame)
       this->lock();
     }
     // Release the accumulating image and reset the num exposures counter
+    size_t dims[2];
+    dims[0] = pImage->dims[0].size;
+    dims[1] = pImage->dims[1].size;
+    int nDims = pImage->ndims;
+    int dataType = pImage->dataType;
     pAccumulatingImage->release();
+    // Realloc accumulating image for next acquisition
+    while(!(pAccumulatingImage = this->pNDArrayPool->alloc(nDims, dims, (NDDataType_t)dataType, 
+                                                           0, NULL))) {
+      asynPrint(pasynUserSelf, ASYN_TRACE_ERROR,
+                "Unable to allocate array from pool....\n");
+      sleep(1);
+    }
     setIntegerParam(ADNumExposuresCounter, 0);
 
   }
@@ -987,6 +999,7 @@ asynStatus FastCCD::writeInt32(asynUser *pasynUser, epicsInt32 value)
          n_images &= 0xFFFF; // Only use least significant bits
 
          setIntegerParam(ADNumImages, n_images);
+         setIntegerParam(ADNumExposuresCounter, 0);  // Reset counter everytime there is new acquire signal
 
          switch(i_mode) {
            case ADImageSingle:
