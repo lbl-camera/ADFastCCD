@@ -147,19 +147,12 @@ void FastCCD::allocateImage(cin_data_frame_t *frame)
       
   frame->data = (uint16_t*)pImage->pData;
 
-  std::cout << "\nDEBUG: allocating accumulation image... " << std::flush;
-
   while(!(pAccumulatingImage = this->pNDArrayPool->alloc(nDims, dims, (NDDataType_t)dataType, 
                                                          0, NULL))) {
     asynPrint(pasynUserSelf, ASYN_TRACE_ERROR,
               "Unable to allocate array from pool....\n");
     sleep(1);
   }
-  std::cout << "done." << std::endl;
-  NDArrayInfo *info = new NDArrayInfo;
-  pAccumulatingImage->getInfo(info);
-  std::cout << "\nDEBUG: reported data: " << std::endl;
-  std::cout << "\tnElements: " << info->nElements << std::endl;
 
   return;
 }
@@ -247,32 +240,20 @@ void FastCCD::processImage(cin_data_frame_t *frame)
   // Get any attributes for the driver
   this->getAttributes(pImage->pAttributeList);
 
-  std::cout << "\nDEBUG: Getting ready for num exposures stuff" << std::endl;
   // Handle accumulations
   int numExposures;
   getIntegerParam(ADNumExposures, &numExposures);
-  std::cout << "\nDEBUG: numExposures: " << numExposures << std::endl;
   // Update exposures counter
   int numExposuresCounter;
   getIntegerParam(ADNumExposuresCounter, &numExposuresCounter);
-  std::cout << "\nDEBUG: numExposuresCounter: " << numExposuresCounter << std::endl;
   numExposuresCounter++;
-  std::cout << "\nDEBUG: numExposures: " << numExposuresCounter << " (incremented)" << std::endl;
   setIntegerParam(ADNumExposuresCounter, numExposuresCounter);
 
   // Accumulate exposures into image accumulation buffer
-  std::cout << "\nDEBUG: x_size: ";
   int x_size = (int)pImage->dims[0].size;
-  std::cout << x_size << std::endl;
-  std::cout << "\nDEBUG: y_size: ";
   int y_size = (int)pImage->dims[1].size;
-  std::cout << y_size << std::endl;
-  std::cout << "\nDEBUG: getting original data... ";
   uint16_t* originalData = (uint16_t*)pImage->pData;
-  std::cout << "done." << std::endl;
-  std::cout << "\nDEBUG: getting target data... ";
   uint16_t* targetData = (uint16_t*)pAccumulatingImage->pData;
-  std::cout << "done." << std::endl;
 
   for (int i = 0; i < y_size * x_size; i++) {
     if (numExposuresCounter == 1) {
@@ -287,27 +268,19 @@ void FastCCD::processImage(cin_data_frame_t *frame)
     //     : originalData[x + y * y_size] + targetData[x + y * y_size];
   }
          
-  std::cout << "\nDEBUG: done with assigning target data" << std::endl;
-  std::cout << "\tnumExposures, numExposuresCounter: " << numExposures << ", " << numExposuresCounter << std::endl;
   if (numExposures == numExposuresCounter) {
     int arrayCallbacks;
-    std::cout << "\tgetting array callbacks... ";
     getIntegerParam(NDArrayCallbacks, &arrayCallbacks);
-    std::cout << "done." << std::endl;
     if (arrayCallbacks) {
       /* Call the NDArray callback */
       /* Must release the lock here, or we can get into a deadlock, because we can
       * block on the plugin lock, and the plugin can be calling us */
-      std::cout << "\tcalling NDArray callback... ";
       this->unlock();
       doCallbacksGenericPointer(pAccumulatingImage, NDArrayData, 0);
       this->lock();
-      std::cout << "\tdone." << std::endl;
     }
     // Release the accumulating image and reset the num exposures counter
-    std::cout << "\trelease accumulating image... ";
     pAccumulatingImage->release();
-    std::cout << "done." << std::endl;
     setIntegerParam(ADNumExposuresCounter, 0);
 
   }
