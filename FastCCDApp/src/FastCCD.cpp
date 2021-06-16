@@ -268,7 +268,9 @@ void FastCCD::processImage(cin_data_frame_t *frame)
     //     : originalData[x + y * y_size] + targetData[x + y * y_size];
   }
          
-  if (numExposures == numExposuresCounter) {
+  // Need a greater than check in case the num exposure PV is changed during a run
+  // to ensure counter never exceeds actual number of exposures requested
+  if (numExposuresCounter >= numExposures) {
     int arrayCallbacks;
     getIntegerParam(NDArrayCallbacks, &arrayCallbacks);
     if (arrayCallbacks) {
