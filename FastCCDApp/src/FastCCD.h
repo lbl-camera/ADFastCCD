@@ -355,6 +355,8 @@ class FastCCD : public ADDriver {
 
  private:
 
+  const int BG_FLOOR = 4036;
+
   int cinPacketBuffer;
   int cinImageBuffer;
 

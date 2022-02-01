@@ -255,12 +255,24 @@ void FastCCD::processImage(cin_data_frame_t *frame)
   uint16_t* originalData = (uint16_t*)pImage->pData;
   uint16_t* targetData = (uint16_t*)pAccumulatingImage->pData;
 
+  const uint16_t RESERVED_BITS = 0xe000;
+  const uint16_t MASK = 0x1fff;
+  uint16_t masked_target, bitflag_target;
   for (int i = 0; i < y_size * x_size; i++) {
-    if (numExposuresCounter == 1) {
+    if ((MASK & originalData[i]) < BG_FLOOR) {
       targetData[i] = originalData[i];
     }
     else {
-      targetData[i] = originalData[i] + targetData[i];
+      if (numExposuresCounter == 1) {
+        // Remove floor without affecting the 3 bitflags
+        targetData[i] = ((MASK & originalData[i]) - BG_FLOOR) | (RESERVED_BITS & originalData[i]);
+      }
+      else {
+  	masked_target = targetData[i] & MASK;  // the previous target data value
+	bitflag_target = targetData[i] & RESERVED_BITS; // the previous target bitflag value
+	// Remove floor (without affecting 3 bitflags), accumulate, then add the previous bitflags that were set
+        targetData[i] = ((((MASK & originalData[i]) - BG_FLOOR) + masked_target) & MASK) | bitflag_target; 
+      }
     }
     // targetData[x + y * y_size] = 
     //   (numExposuresCounter == 1) 
